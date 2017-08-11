@@ -51,21 +51,27 @@ namespace MarioKartTrackMaker.ViewerResources
 
         //Schedule for Importing
         private List<string> _ObjectsToLoad = new List<string>();
-        public void InsertObjects(string filepath) {
+        private Attachment _AttachmentToAttachTo = null;
+        public void InsertObjects(string filepath, Attachment attachment) {
             _ObjectsToLoad.Add(filepath);
+            _AttachmentToAttachTo = attachment;
         }
         Random r = new Random();
         Vector3 _frompos = new Vector3();
+        Vector3 _fromcampos = new Vector3();
         float _fromzoom = 0;
         float _transtime = 0;
+        bool _panzoom;
         float _smoothtranstime
         {
             get { return _transtime * _transtime * _transtime * (_transtime * (_transtime * 6 - 15) + 10); }
         }
         Object3D _targetObj;
-        public void GoToObject(Object3D obj)
+        public void GoToObject(Object3D obj, bool pan)
         {
             _frompos = cam.pivot;
+            _fromcampos = cam.position;
+            _panzoom = pan;
             _transtime = 1;
             _targetObj = obj;
             _fromzoom = cam.zoom;
@@ -191,7 +197,7 @@ namespace MarioKartTrackMaker.ViewerResources
                     return maxT.Z;
                 }
             }
-            public TraceResult Trace()
+            public TraceResult Trace(Camera cam)
             {
                 float depth = float.PositiveInfinity;
                 bool intersects = false;
@@ -200,7 +206,7 @@ namespace MarioKartTrackMaker.ViewerResources
                 foreach(Object3D obj in Object3D.database)
                 {
                     Matrix4 tnsfm = obj.transform;
-                    if(Math.Min((obj.position-camera.pivot).Length, 5000F) <= camera.zoom) {
+                    if(Math.Min((obj.position-camera.pivot).Length, 5000F) <= camera.zoom && inSight(obj, cam)) {
                     foreach (Mesh m in obj.model.meshes)
                     {
                         for (int f = 0; f < Math.Min(m.faces.Count, m.fnmls.Count); f++)
@@ -335,13 +341,15 @@ namespace MarioKartTrackMaker.ViewerResources
                 {
                     _transtime = 0;
                     cam.pivot = _targetObj.position;
-                    cam.zoom = _targetObj.model.size.average * 3F;
+                    if (_panzoom) cam.position = _fromcampos-_frompos+_targetObj.position;
+                    cam.zoom = _targetObj.model.size.maxS * 4F;
                     _targetObj = null;
                 }
                 else
                 {
                     cam.pivot = Vector3.Lerp(_targetObj.position, _frompos, _smoothtranstime);
-                    cam.zoom = lerp(_targetObj.model.size.average * 3F, _fromzoom, _smoothtranstime);
+                    if (_panzoom) cam.position = Vector3.Lerp(_fromcampos - _frompos + _targetObj.position, _fromcampos, _smoothtranstime);
+                    cam.zoom = lerp(_targetObj.model.size.maxS * 4F, _fromzoom, _smoothtranstime);
                 }
             }
             if (Forward)
@@ -395,8 +403,15 @@ namespace MarioKartTrackMaker.ViewerResources
                     foreach (string objectpath in _ObjectsToLoad)
                     {
                         Object3D obj = new Object3D(objectpath);
+                        if (_AttachmentToAttachTo == null) goto no;
+                        if (!obj.attachTo(_AttachmentToAttachTo, Object3D.Active_Object)) goto no;
+                        goto yes;
+                        no:;
                         obj.position = cam.pivot;
+                        yes:;
+                        GoToObject(obj, true);
                         Object3D.database.Add(obj);
+                        Object3D.Active_Object = obj;
                     }
                     _ObjectsToLoad = new List<string>();
                 }
@@ -435,7 +450,7 @@ namespace MarioKartTrackMaker.ViewerResources
                 GL.End();*/
                 foreach (Object3D obj in Object3D.database)
                 {
-                    obj.DrawObject(_pgm, _coll, _wf);
+                        obj.DrawObject(_pgm, _coll, _wf, inSight(obj, cam));
                 }
                 switch (Form1.current_tool)
                 {
@@ -474,6 +489,64 @@ namespace MarioKartTrackMaker.ViewerResources
 
         }
 
+        public static bool inSight(Object3D obj, Camera cam)
+        {
+            Matrix4 mtx = obj.transform;
+            Vector3 pos1 = ToScreen(Vector3.TransformPosition(obj.model.size.nXnYnZ, mtx), cam);
+            Vector3 pos2 = ToScreen(Vector3.TransformPosition(obj.model.size.pXnYnZ, mtx), cam);
+            Vector3 pos3 = ToScreen(Vector3.TransformPosition(obj.model.size.nXpYnZ, mtx), cam);
+            Vector3 pos4 = ToScreen(Vector3.TransformPosition(obj.model.size.nXnYpZ, mtx), cam);
+            Vector3 pos5 = ToScreen(Vector3.TransformPosition(obj.model.size.pXpYnZ, mtx), cam);
+            Vector3 pos6 = ToScreen(Vector3.TransformPosition(obj.model.size.pXnYpZ, mtx), cam);
+            Vector3 pos7 = ToScreen(Vector3.TransformPosition(obj.model.size.nXpYpZ, mtx), cam);
+            Vector3 pos8 = ToScreen(Vector3.TransformPosition(obj.model.size.pXpYpZ, mtx), cam);
+            float Left =
+                Math.Min(pos1.X,
+                Math.Min(pos2.X,
+                Math.Min(pos3.X,
+                Math.Min(pos4.X,
+                Math.Min(pos5.X,
+                Math.Min(pos6.X,
+                Math.Min(pos7.X, pos8.X)))))));
+            float Right =
+                Math.Max(pos1.X,
+                Math.Max(pos2.X,
+                Math.Max(pos3.X,
+                Math.Max(pos4.X,
+                Math.Max(pos5.X,
+                Math.Max(pos6.X,
+                Math.Max(pos7.X, pos8.X)))))));
+            float Bottom =
+                Math.Min(pos1.Y,
+                Math.Min(pos2.Y,
+                Math.Min(pos3.Y,
+                Math.Min(pos4.Y,
+                Math.Min(pos5.Y,
+                Math.Min(pos6.Y,
+                Math.Min(pos7.Y, pos8.Y)))))));
+            float Top =
+                Math.Max(pos1.Y,
+                Math.Max(pos2.Y,
+                Math.Max(pos3.Y,
+                Math.Max(pos4.Y,
+                Math.Max(pos5.Y,
+                Math.Max(pos6.Y,
+                Math.Max(pos7.Y, pos8.Y)))))));
+            float Depth =
+                Math.Max(pos1.Z,
+                Math.Max(pos2.Z,
+                Math.Max(pos3.Z,
+                Math.Max(pos4.Z,
+                Math.Max(pos5.Z,
+                Math.Max(pos6.Z,
+                Math.Max(pos7.Z, pos8.Z)))))));
+            if (Left > 1) return false;
+            if (Right < -1) return false;
+            if (Bottom > 1) return false;
+            if (Top < -1) return false;
+            if (Depth < 0) return false;
+            return true;
+        }
         public Ray FromMousePos(Matrix4 mtx)
         {
             return new Ray(cam.position,
@@ -483,11 +556,16 @@ namespace MarioKartTrackMaker.ViewerResources
                     ).ExtractTranslation(),
                     cam);
         }
+        public static Vector3 ToScreen(Vector3 pos, Camera cam)
+        {
 
+            Vector3 proj = Vector3.TransformPosition(pos, cam.matrix);
+            return new Vector3(proj.X / proj.Z, proj.Y / proj.Z, proj.Z);
+        }
         Point _prev = new Point();
         bool Forward, Backward, SideLeft, SideRight, SideUp, SideDown = false;
         private Ray MPray;
-        private TraceResult tr;
+        private TraceResult tr = new TraceResult();
 
         protected override void OnKeyDown(KeyEventArgs e)
         {
@@ -498,6 +576,9 @@ namespace MarioKartTrackMaker.ViewerResources
             SideRight |= (e.KeyCode == Keys.D);
             SideUp |= (e.KeyCode == Keys.E);
             SideDown |= (e.KeyCode == Keys.Q);
+            //if(e.KeyCode == Keys.G)
+            //{
+            //}
             Invalidate();
         }
         protected override void OnKeyUp(KeyEventArgs e)
@@ -515,6 +596,43 @@ namespace MarioKartTrackMaker.ViewerResources
         {
             base.OnMouseDown(e);
             _prev = e.Location;
+            if (Form1.current_tool == Tools.Select)
+            {
+                if (e.Button == MouseButtons.Left)
+                {
+                    if (tr.Hit)
+                    {
+                        Object3D.Active_Object = tr.HitObject;
+                        float distance = float.PositiveInfinity;
+                        Attachment closestAtch = null;
+                        foreach (Attachment atch in Object3D.Active_Object.model.attachments)
+                        {
+                            foreach (Object3D.attachmentInfo atif in Object3D.Active_Object.atch_info)
+                                if (atif.thisAtch == atch)
+                                    goto no;
+                            float this_dist = (atch.get_world_transform(Object3D.Active_Object.transform).ExtractTranslation() - tr.HitPos).Length;
+                            if (distance > this_dist)
+                            {
+                                closestAtch = atch;
+                                distance = this_dist;
+                            }
+                            no:;
+                        }
+                        if (closestAtch != null)
+                        {
+                            Object3D.Active_Object.Active_Attachment = closestAtch;
+                        }
+                        ((Form1)Form.ActiveForm).listBox1_DoStuffWhenIndexChanged = false;
+                        ((Form1)Form.ActiveForm).UpdateActiveObject();
+                        ((Form1)Form.ActiveForm).listBox1_DoStuffWhenIndexChanged = true;
+                    }
+                    else { Object3D.Active_Object = null;Invalidate();
+                        ((Form1)Form.ActiveForm).listBox1_DoStuffWhenIndexChanged = false;
+                        ((Form1)Form.ActiveForm).UpdateActiveObject();
+                        ((Form1)Form.ActiveForm).listBox1_DoStuffWhenIndexChanged = true;
+                    }
+                }
+            }
         }
         protected override void OnMouseWheel(MouseEventArgs e)
         {
@@ -522,12 +640,13 @@ namespace MarioKartTrackMaker.ViewerResources
             cam.zoom = Math.Max(cam.clip_near, cam.zoom+e.Delta/12F* (float)Math.Pow(cam.zoom, 0.375F));
             Invalidate();
         }
+        bool _prevhit = false;
         protected override void OnMouseMove(MouseEventArgs e)
         {
             base.OnMouseMove(e);
             mx = e.X;
             my = e.Y;
-            bool invalidate = true;
+            bool invalidate = false;
             if (e.Button == MouseButtons.Right)
             {
                 if ((ModifierKeys & Keys.Shift) != 0)
@@ -549,8 +668,10 @@ namespace MarioKartTrackMaker.ViewerResources
             }
             Matrix4 mtx = cam.matrix;
             MPray = FromMousePos(mtx);
-            tr = MPray.Trace();
-            if (tr.Hit || invalidate) Invalidate();
+            tr = MPray.Trace(cam);
+
+            if (tr.Hit || invalidate || _prevhit) Invalidate();
+            _prevhit = tr.Hit;
         }
 
         private void ViewPortPanel_Load(object sender, EventArgs e)

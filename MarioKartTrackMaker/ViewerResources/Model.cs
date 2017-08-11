@@ -90,7 +90,15 @@ namespace MarioKartTrackMaker.ViewerResources
                 List<int[]> faces = new List<int[]>();
                 List<int[]> fnmls = new List<int[]>();
                 List<int[]> fuvs = new List<int[]>();
-                int texture = ContentPipe.Load_and_AddTexture(Path.GetDirectoryName(filepath) + filepathSlash + mat.DiffuseTexture);
+                int texture;
+                Console.WriteLine("{0}: {1}", mat.DiffuseTexture, Path.IsPathRooted(mat.DiffuseTexture));
+                if (Path.IsPathRooted(mat.DiffuseTexture))
+                {
+                    texture = ContentPipe.Load_and_AddTexture(mat.DiffuseTexture);
+                }
+                else {
+                    texture = ContentPipe.Load_and_AddTexture(Path.GetDirectoryName(filepath) + filepathSlash + mat.DiffuseTexture);
+                }
 
                 foreach (ObjParser.Types.Face f in tobj.FaceList)
                 {
@@ -185,7 +193,7 @@ namespace MarioKartTrackMaker.ViewerResources
                     }
                     if (parts[0].ToUpper() == "ISFIRST")
                     {
-                        atch.isFirst = parts[1] == "1";
+                        atch.isFirst = int.Parse(parts[1]);
                     }
                     if (parts[0].ToUpper() == "ISFEMALE")
                     {
@@ -285,13 +293,13 @@ namespace MarioKartTrackMaker.ViewerResources
             }
         }
 
-        public void DrawModel(int program, int mode, bool wireframe)
+        public void DrawModel(int program, int mode, bool wireframe, bool selected)
         {
             if ((mode & 1) == 1)
             {
                 foreach (Mesh mesh in meshes)
                 {
-                    mesh.DrawMesh(program, wireframe);
+                    mesh.DrawMesh(program, wireframe, selected);
                 }
             }
             if ((mode & 2) == 2)
